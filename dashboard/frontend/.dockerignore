@@ -1,0 +1,6 @@
+node_modules
+dist
+.env
+.oxlintrc.json
+README.md
+package-lock.json
