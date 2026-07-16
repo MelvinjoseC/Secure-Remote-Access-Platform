@@ -1,0 +1,24 @@
+# Node
+**/node_modules/
+**/dist/
+**/.env
+**/package-lock.json
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/env/
+
+# Go
+**/bin/
+**/agent/agent
+**/signaling/signaling
+
+# Generated Certificates
+certs/
+
+# OS/IDEs
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # 1. SSL Certificates Generator (runs once to verify/generate dev certs)
+  certs-generator:
+    image: alpine:latest
+    volumes:
+      - certs-data:/certs
+      - .:/app
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache openssl bash
+        cd /app
+        chmod +x ./generate-certs.sh
+        ./generate-certs.sh
+        # Copy to named volume so they persist and sync across containers
+        cp -R ./certs/* /certs/
+        echo "Shared certificate volume prepared."
+
+  # 2. Database (PostgreSQL)
+  db:
+    image: postgres:16-alpine
+    container_name: remote-access-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: remote_access
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # 3. WebRTC Signaling Server (Go)
+  signaling:
+    build: ./signaling
+    container_name: remote-access-signaling
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    environment:
+      PORT: "8443"
+      SIGNALING_API_KEY: "dev-signaling-secret-key"
+      SSL_CERT_FILE: "/certs/server.crt"
+      SSL_KEY_FILE: "/certs/server.key"
+    volumes:
+      - certs-data:/certs
+    depends_on:
+      certs-generator:
+        condition: service_completed_successfully
+
+  # 4. Operations Dashboard Backend (FastAPI)
+  dashboard-backend:
+    build: ./dashboard/backend
+    container_name: remote-access-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/remote_access"
+      JWT_SECRET: "super-secret-dev-jwt-key"
+      SIGNALING_API_URL: "https://signaling:8443"
+      SIGNALING_API_KEY: "dev-signaling-secret-key"
+    volumes:
+      - certs-data:/certs
+    depends_on:
+      db:
+        condition: service_started
+      signaling:
+        condition: service_started
+      certs-generator:
+        condition: service_completed_successfully
+
+  # 5. Operations Dashboard Frontend (React/Vite)
+  dashboard-frontend:
+    build: ./dashboard/frontend
+    container_name: remote-access-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - certs-data:/certs
+    depends_on:
+      certs-generator:
+        condition: service_completed_successfully
+
+  # 6. Test Agent (Go - Runs in container under simulated headless mode)
+  agent:
+    build: ./agent
+    container_name: remote-access-agent
+    restart: unless-stopped
+    ports:
+      - "50000:50000/udp"
+    environment:
+      - NAT_1TO1_IP=127.0.0.1
+    volumes:
+      - certs-data:/certs
+    depends_on:
+      signaling:
+        condition: service_started
+
+  # 7. coturn TURN Server
+  turn:
+    image: coturn/coturn:4.6.2-alpine
+    container_name: remote-access-turn
+    restart: unless-stopped
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+    # WARNING: Static credentials are used for local dev. Rotate/use short-lived dynamic creds in prod.
+    command:
+      - -n
+      - --lt-cred-mech
+      - --fingerprint
+      - --no-multicast-peers
+      - --user=demo:password123
+      - --realm=platform.local
+      - --verbose
+
+volumes:
+  pgdata:
+  certs-data:
