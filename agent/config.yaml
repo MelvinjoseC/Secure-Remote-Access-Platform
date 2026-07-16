@@ -1,0 +1,6 @@
+# Agent Configuration File
+signaling_url: "wss://signaling:8443"
+device_id: "test-drone-01"
+auth_token: "agent-secure-token-123"
+insecure_skip_verify: false
+capture_interval_ms: 500  # Stream screenshot roughly twice a second for MVP
