@@ -94,6 +94,14 @@ func main() {
 		}
 		handleListDevices(w, r, apiKey)
 	})
+	http.HandleFunc("/api/devices/telemetry", func(w http.ResponseWriter, r *http.Request) {
+		ip := getClientIP(r)
+		if isRateLimited(ip, 30, time.Minute) {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		handleDeviceTelemetry(w, r, apiKey)
+	})
 
 	log.Printf("Signaling server starting on port %s...", port)
 	if certFile != "" && keyFile != "" {
@@ -170,6 +178,19 @@ func handleAgentRegister(w http.ResponseWriter, r *http.Request) {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			break
+		}
+
+		var rawMsg map[string]interface{}
+		if err := json.Unmarshal(message, &rawMsg); err == nil {
+			if rawMsg["type"] == "telemetry" {
+				var telMsg struct {
+					Telemetry interface{} `json:"telemetry"`
+				}
+				if err := json.Unmarshal(message, &telMsg); err == nil {
+					cacheTelemetry(deviceId, telMsg.Telemetry)
+				}
+				continue // consume telemetry message, do not relay to client
+			}
 		}
 
 		hub.mu.RLock()
@@ -291,4 +312,49 @@ func handleListDevices(w http.ResponseWriter, r *http.Request, apiKey string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(devices)
+}
+
+// Telemetry caching structures and handlers
+var (
+	telemetryCache = make(map[string]interface{})
+	telemetryMu    sync.RWMutex
+)
+
+func cacheTelemetry(deviceId string, data interface{}) {
+	telemetryMu.Lock()
+	defer telemetryMu.Unlock()
+	telemetryCache[deviceId] = data
+}
+
+func getTelemetry(deviceId string) (interface{}, bool) {
+	telemetryMu.RLock()
+	defer telemetryMu.RUnlock()
+	data, ok := telemetryCache[deviceId]
+	return data, ok
+}
+
+func handleDeviceTelemetry(w http.ResponseWriter, r *http.Request, apiKey string) {
+	authHeader := r.Header.Get("Authorization")
+	expectedAuth := "Bearer " + apiKey
+	if authHeader != expectedAuth {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	deviceId := r.URL.Query().Get("deviceId")
+	if deviceId != "" {
+		data, found := getTelemetry(deviceId)
+		if !found {
+			http.Error(w, "Telemetry not found for device", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(data)
+		return
+	}
+
+	telemetryMu.RLock()
+	defer telemetryMu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(telemetryCache)
 }
