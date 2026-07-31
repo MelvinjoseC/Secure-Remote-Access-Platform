@@ -46,6 +46,23 @@ type TelemetryMessage struct {
 	Telemetry TelemetryData `json:"telemetry"`
 }
 
+type StreamQuality struct {
+	Width   int `json:"width"`
+	Height  int `json:"height"`
+	FPS     int `json:"fps"`
+	Bitrate int `json:"bitrate"`
+}
+
+var (
+	qualityMutex   sync.Mutex
+	currentQuality = StreamQuality{
+		Width:   800,
+		Height:  600,
+		FPS:     10,
+		Bitrate: 800,
+	}
+)
+
 var (
 	pcMutex         sync.Mutex
 	activePC        *webrtc.PeerConnection
@@ -379,6 +396,14 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 
 	streaming = true
 
+	// Lock quality variables for this setup
+	qualityMutex.Lock()
+	targetW := currentQuality.Width
+	targetH := currentQuality.Height
+	fps := currentQuality.FPS
+	bitrate := currentQuality.Bitrate
+	qualityMutex.Unlock()
+
 	// Get initial frame dimensions
 	initImg, err := captureScreenImage()
 	if err != nil {
@@ -387,7 +412,7 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 	}
 	bounds := initImg.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
-	log.Printf("Starting FFmpeg screen encoder with dimensions: %dx%d", w, h)
+	log.Printf("Starting FFmpeg screen encoder with source %dx%d -> stream %dx%d at %d FPS (%d kbps)", w, h, targetW, targetH, fps, bitrate)
 
 	// Spawn FFmpeg to read raw RGBA and output VP8 IVF
 	cmd := exec.Command(
@@ -395,10 +420,12 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 		"-f", "rawvideo",
 		"-pix_fmt", "rgba",
 		"-s", fmt.Sprintf("%dx%d", w, h),
-		"-r", "10",
+		"-r", fmt.Sprintf("%d", fps),
 		"-i", "-",
 		"-f", "ivf",
 		"-vcodec", "vp8",
+		"-s", fmt.Sprintf("%dx%d", targetW, targetH),
+		"-b:v", fmt.Sprintf("%dk", bitrate),
 		"-deadline", "realtime",
 		"-cpu-used", "4",
 		"-",
@@ -420,10 +447,11 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 		return
 	}
 
-	// Stdin writer (captures screen at 10 FPS and pipes to FFmpeg)
+	// Stdin writer (captures screen at target FPS and pipes to FFmpeg)
 	go func() {
 		defer stdin.Close()
-		ticker := time.NewTicker(100 * time.Millisecond) // 10 FPS
+		frameInterval := time.Duration(1000/fps) * time.Millisecond
+		ticker := time.NewTicker(frameInterval)
 		defer ticker.Stop()
 
 		for {
@@ -455,6 +483,8 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 			return
 		}
 
+		frameInterval := time.Duration(1000/fps) * time.Millisecond
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -481,7 +511,7 @@ func startScreenStreaming(videoTrack *webrtc.TrackLocalStaticSample) {
 
 				err = videoTrack.WriteSample(media.Sample{
 					Data:     payload,
-					Duration: 100 * time.Millisecond,
+					Duration: frameInterval,
 				})
 				if err != nil {
 					log.Printf("Error writing sample to track: %v", err)
