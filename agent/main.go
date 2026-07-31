@@ -41,6 +41,11 @@ type SignalMessage struct {
 	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
 }
 
+type TelemetryMessage struct {
+	Type      string        `json:"type"`
+	Telemetry TelemetryData `json:"telemetry"`
+}
+
 var (
 	pcMutex         sync.Mutex
 	activePC        *webrtc.PeerConnection
@@ -126,6 +131,38 @@ func main() {
 	wsConn = conn
 	wsMutex.Unlock()
 	log.Println("Connected to Signaling Server successfully!")
+
+	// Goroutine to send periodic telemetry reports
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-shutdown:
+				return
+			case <-ticker.C:
+				data := collectTelemetry()
+				telemetryMsg := TelemetryMessage{
+					Type:      "telemetry",
+					Telemetry: data,
+				}
+				payload, err := json.Marshal(telemetryMsg)
+				if err != nil {
+					log.Printf("Failed to marshal telemetry: %v", err)
+					continue
+				}
+				
+				wsMutex.Lock()
+				if wsConn != nil {
+					err = wsConn.WriteMessage(websocket.TextMessage, payload)
+					if err != nil {
+						log.Printf("Failed to send telemetry: %v", err)
+					}
+				}
+				wsMutex.Unlock()
+			}
+		}
+	}()
 
 	// Goroutine to handle signaling messages
 	go func() {
