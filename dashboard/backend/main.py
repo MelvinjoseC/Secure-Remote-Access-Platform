@@ -345,17 +345,71 @@ def end_session(payload: SessionEnd, current_user: UserDB = Depends(get_current_
         
     return log_entry
 
+def _get_filtered_audit_logs(
+    db: Session,
+    search: Optional[str] = None,
+    device_id: Optional[str] = None,
+    operator: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    status: Optional[str] = None
+):
+    query = db.query(AuditLogDB)
+    if search:
+        query = query.filter(
+            (AuditLogDB.initiating_user.ilike(f"%{search}%")) |
+            (AuditLogDB.target_device_id.ilike(f"%{search}%"))
+        )
+    if device_id:
+        query = query.filter(AuditLogDB.target_device_id == device_id)
+    if operator:
+        query = query.filter(AuditLogDB.initiating_user == operator)
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+            query = query.filter(AuditLogDB.start_time >= start_dt)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date)
+            query = query.filter(AuditLogDB.start_time <= end_dt)
+        except ValueError:
+            pass
+    if status == "active":
+        query = query.filter(AuditLogDB.end_time.is_(None))
+    elif status == "completed":
+        query = query.filter(AuditLogDB.end_time.isnot(None))
+    return query.order_by(AuditLogDB.start_time.desc()).all()
+
 @app.get("/api/audit-logs", response_model=List[AuditLogResponse])
-def get_audit_logs(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_audit_logs(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    search: Optional[str] = None,
+    device_id: Optional[str] = None,
+    operator: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    status: Optional[str] = None
+):
     """
     Returns audit log entries from Postgres, ordered by start time desc.
     """
-    logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
-    return logs
+    return _get_filtered_audit_logs(db, search, device_id, operator, start_date, end_date, status)
 
 @app.get("/api/audit-logs/export/csv")
-def export_audit_logs_csv(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
-    logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
+def export_audit_logs_csv(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    search: Optional[str] = None,
+    device_id: Optional[str] = None,
+    operator: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    status: Optional[str] = None
+):
+    logs = _get_filtered_audit_logs(db, search, device_id, operator, start_date, end_date, status)
     
     output = io.StringIO()
     writer = csv.writer(output)
@@ -381,8 +435,17 @@ def export_audit_logs_csv(current_user: UserDB = Depends(get_current_user), db: 
     return response
 
 @app.get("/api/audit-logs/export/json")
-def export_audit_logs_json(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
-    logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
+def export_audit_logs_json(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    search: Optional[str] = None,
+    device_id: Optional[str] = None,
+    operator: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    status: Optional[str] = None
+):
+    logs = _get_filtered_audit_logs(db, search, device_id, operator, start_date, end_date, status)
     
     data = []
     for log in logs:
