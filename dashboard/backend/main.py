@@ -331,6 +331,37 @@ def list_devices(current_user: UserDB = Depends(get_current_user)):
         # fallback to empty list instead of crashing, but raise HTTP 502 for visibility
         raise HTTPException(status_code=502, detail=f"Signaling server unreachable: {e}")
 
+@app.get("/api/devices/telemetry")
+def get_devices_telemetry(
+    device_id: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user)
+):
+    """
+    Proxies request to signaling server to get cached telemetry.
+    """
+    try:
+        headers = {"Authorization": f"Bearer {SIGNALING_API_KEY}"}
+        url = f"{SIGNALING_API_URL}/api/devices/telemetry"
+        if device_id:
+            url += f"?deviceId={device_id}"
+            
+        response = requests.get(
+            url, 
+            headers=headers, 
+            verify=False,
+            timeout=5
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Telemetry not found for device")
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch telemetry from signaling server")
+        return response.json()
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error querying telemetry: {e}")
+        raise HTTPException(status_code=502, detail=f"Signaling server unreachable: {e}")
+
 @app.post("/api/sessions/start", response_model=AuditLogResponse)
 def start_session(payload: SessionStart, current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
     """
