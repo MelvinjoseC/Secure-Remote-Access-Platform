@@ -181,6 +181,11 @@ class MFASetupResponse(BaseModel):
 class MFAVerifyPayload(BaseModel):
     code: str
 
+class LoginMFAPayload(BaseModel):
+    email: str
+    password: str
+    code: str
+
 # ==========================================
 # SECURITY UTILITIES
 # ==========================================
@@ -307,14 +312,31 @@ def login(request: Request, user_data: UserLogin, db: Session = Depends(get_db))
             detail="Too many login attempts. Please try again in a minute."
         )
 
-    # TODO(stage-4): Add Multi-Factor Authentication (MFA) check here
-
     user = db.query(UserDB).filter(UserDB.email == user_data.email).first()
     if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
+    if user.mfa_enabled:
+        return {"access_token": "mfa_required", "token_type": "bearer", "email": user.email, "role": user.role}
+        
     access_token = create_access_token(data={"sub": user.email, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer", "email": user.email, "role": user.role}
+
+@app.post("/api/auth/login/mfa", response_model=Token)
+def login_mfa(payload: LoginMFAPayload, db: Session = Depends(get_db)):
+    user = db.query(UserDB).filter(UserDB.email == payload.email).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+        
+    if not user.mfa_enabled or not user.mfa_secret:
+        raise HTTPException(status_code=400, detail="MFA is not enabled for this account.")
+        
+    totp = pyotp.TOTP(user.mfa_secret)
+    if totp.verify(payload.code):
+        access_token = create_access_token(data={"sub": user.email, "role": user.role})
+        return {"access_token": access_token, "token_type": "bearer", "email": user.email, "role": user.role}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid verification code.")
 
 @app.get("/api/auth/me", response_model=UserResponse)
 def get_me(current_user: UserDB = Depends(get_current_user)):
