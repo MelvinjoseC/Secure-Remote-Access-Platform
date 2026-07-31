@@ -12,6 +12,8 @@ export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('jwt_token'));
   const [email, setEmail] = useState<string | null>(localStorage.getItem('jwt_email'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('jwt_role'));
+  const [mfaRequired, setMfaRequired] = useState<boolean>(false);
+  const [mfaCode, setMfaCode] = useState<string>('');
   
   // Navigation state
   const [currentPage, setCurrentPage] = useState<Page>('devices');
@@ -66,6 +68,12 @@ export default function App() {
         throw new Error(errorMsg);
       }
 
+      if (data.access_token === "mfa_required") {
+        setMfaRequired(true);
+        setLoading(false);
+        return;
+      }
+
       localStorage.setItem('jwt_token', data.access_token);
       localStorage.setItem('jwt_email', data.email);
       localStorage.setItem('jwt_role', data.role);
@@ -79,6 +87,42 @@ export default function App() {
       setCurrentPage('devices');
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/auth/login/mfa`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: inputEmail, password: inputPassword, code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'MFA validation failed.');
+      }
+
+      localStorage.setItem('jwt_token', data.access_token);
+      localStorage.setItem('jwt_email', data.email);
+      localStorage.setItem('jwt_role', data.role);
+      setToken(data.access_token);
+      setEmail(data.email);
+      setRole(data.role);
+
+      setInputEmail('');
+      setInputPassword('');
+      setMfaCode('');
+      setMfaRequired(false);
+      setCurrentPage('devices');
+    } catch (err: any) {
+      setError(err.message || 'MFA authentication failed.');
     } finally {
       setLoading(false);
     }
@@ -107,6 +151,57 @@ export default function App() {
 
   // Render Login/Register panel if not authenticated
   if (!token) {
+    if (mfaRequired) {
+      return (
+        <div className="app-container" style={{ justifyContent: 'center' }}>
+          <div className="auth-wrapper">
+            <div className="auth-card">
+              <div className="auth-logo">🔑</div>
+              <h1 className="auth-title">Two-Factor Authentication</h1>
+              <p className="auth-subtitle font-sans">Enter the 6-digit code from your authenticator app</p>
+
+              {error && (
+                <div className="error-banner">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleMfaSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Authenticator Token</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="000 000"
+                    required
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').substring(0, 6))}
+                    style={{ letterSpacing: '4px', textAlign: 'center', fontSize: '1.25rem', fontWeight: 'bold' }}
+                    disabled={loading}
+                  />
+                </div>
+
+                <button type="submit" className="auth-btn" disabled={loading}>
+                  {loading ? 'Verifying...' : 'Verify Access'}
+                </button>
+              </form>
+
+              <div className="auth-toggle">
+                <button className="auth-toggle-link" onClick={() => { setMfaRequired(false); setMfaCode(''); setError(null); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  ← Back to Login
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="app-container" style={{ justifyContent: 'center' }}>
         <div className="auth-wrapper">
