@@ -39,6 +39,30 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ token, backendUrl }) => {
     }
   };
 
+  const handleExport = async (format: 'csv' | 'json') => {
+    try {
+      const res = await fetch(`${backendUrl}/api/audit-logs/export/${format}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to export logs as ${format.toUpperCase()}.`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-logs.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || 'Export failed.');
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
   }, [token, backendUrl]);
@@ -83,9 +107,17 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ token, backendUrl }) => {
           </svg>
           Security Audit Logs
         </h2>
-        <button className="connect-btn" style={{ width: 'auto', padding: '0.5rem 1rem' }} onClick={fetchLogs} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Logs'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="nav-btn" style={{ border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-secondary)', padding: '0.5rem 1rem' }} onClick={() => handleExport('csv')} disabled={logs.length === 0}>
+            Export CSV
+          </button>
+          <button className="nav-btn" style={{ border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-secondary)', padding: '0.5rem 1rem' }} onClick={() => handleExport('json')} disabled={logs.length === 0}>
+            Export JSON
+          </button>
+          <button className="connect-btn" style={{ width: 'auto', padding: '0.5rem 1rem' }} onClick={fetchLogs} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh Logs'}
+          </button>
+        </div>
       </div>
 
       {error && (
