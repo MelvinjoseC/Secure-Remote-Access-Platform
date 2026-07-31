@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { DeviceList } from './components/DeviceList';
 import { SessionViewer } from './components/SessionViewer';
 import { AuditLogs } from './components/AuditLogs';
+import { UserManagement } from './components/UserManagement';
 
-type Page = 'devices' | 'session' | 'logs';
+type Page = 'devices' | 'session' | 'logs' | 'users';
 
 export default function App() {
   // Auth state
   const [token, setToken] = useState<string | null>(localStorage.getItem('jwt_token'));
   const [email, setEmail] = useState<string | null>(localStorage.getItem('jwt_email'));
+  const [role, setRole] = useState<string | null>(localStorage.getItem('jwt_role'));
   
   // Navigation state
   const [currentPage, setCurrentPage] = useState<Page>('devices');
@@ -65,8 +67,10 @@ export default function App() {
 
       localStorage.setItem('jwt_token', data.access_token);
       localStorage.setItem('jwt_email', data.email);
+      localStorage.setItem('jwt_role', data.role);
       setToken(data.access_token);
       setEmail(data.email);
+      setRole(data.role);
       
       // Reset form
       setInputEmail('');
@@ -82,8 +86,10 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('jwt_email');
+    localStorage.removeItem('jwt_role');
     setToken(null);
     setEmail(null);
+    setRole(null);
     setActiveDeviceId(null);
     setCurrentPage('devices');
   };
@@ -219,6 +225,22 @@ export default function App() {
             Audit Logs
           </button>
 
+          {role === 'admin' && (
+            <button
+              className={`nav-btn ${currentPage === 'users' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('users')}
+              disabled={currentPage === 'session'}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              Users
+            </button>
+          )}
+
           <div className="user-status">
             <span className="user-email">{email}</span>
             <button className="logout-btn" onClick={handleLogout} disabled={currentPage === 'session'}>
@@ -249,6 +271,13 @@ export default function App() {
 
         {currentPage === 'logs' && (
           <AuditLogs
+            token={token}
+            backendUrl={backendUrl}
+          />
+        )}
+
+        {currentPage === 'users' && role === 'admin' && (
+          <UserManagement
             token={token}
             backendUrl={backendUrl}
           />
