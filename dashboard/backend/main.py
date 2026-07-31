@@ -1,6 +1,8 @@
 import os
 import uuid
 import re
+import csv
+import io
 import time
 import requests
 from datetime import datetime, timedelta, timezone
@@ -10,6 +12,7 @@ from pydantic import BaseModel, EmailStr
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -349,3 +352,53 @@ def get_audit_logs(current_user: UserDB = Depends(get_current_user), db: Session
     """
     logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
     return logs
+
+@app.get("/api/audit-logs/export/csv")
+def export_audit_logs_csv(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow(["Session ID", "Initiator", "Target Device ID", "Start Time (UTC)", "End Time (UTC)", "Duration (Seconds)"])
+    
+    for log in logs:
+        duration = ""
+        if log.end_time and log.start_time:
+            duration = int((log.end_time - log.start_time).total_seconds())
+        writer.writerow([
+            log.session_id,
+            log.initiating_user,
+            log.target_device_id,
+            log.start_time.isoformat() if log.start_time else "",
+            log.end_time.isoformat() if log.end_time else "",
+            duration
+        ])
+    
+    output.seek(0)
+    response = StreamingResponse(iter([output.getvalue()]), media_type="text/csv")
+    response.headers["Content-Disposition"] = "attachment; filename=audit-logs.csv"
+    return response
+
+@app.get("/api/audit-logs/export/json")
+def export_audit_logs_json(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    logs = db.query(AuditLogDB).order_by(AuditLogDB.start_time.desc()).all()
+    
+    data = []
+    for log in logs:
+        duration = None
+        if log.end_time and log.start_time:
+            duration = int((log.end_time - log.start_time).total_seconds())
+        data.append({
+            "session_id": log.session_id,
+            "initiating_user": log.initiating_user,
+            "target_device_id": log.target_device_id,
+            "start_time": log.start_time.isoformat() if log.start_time else None,
+            "end_time": log.end_time.isoformat() if log.end_time else None,
+            "duration_seconds": duration
+        })
+        
+    return JSONResponse(
+        content=data,
+        headers={"Content-Disposition": "attachment; filename=audit-logs.json"}
+    )
