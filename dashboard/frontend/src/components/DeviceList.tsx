@@ -11,6 +11,14 @@ export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onCon
   const [telemetry, setTelemetry] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+
+  const formatUptime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hrs}h ${mins}m ${secs}s`;
+  };
 
   const fetchDevices = async () => {
     setError(null);
@@ -158,16 +166,84 @@ export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onCon
                 )}
               </div>
 
-              <div className="device-card-actions">
-                <button className="connect-btn" onClick={() => onConnect(deviceId)}>
+              <div className="device-card-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="connect-btn" style={{ flex: 1 }} onClick={() => onConnect(deviceId)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                  Establish Remote Session
+                  Connect
+                </button>
+                <button
+                  className="nav-btn"
+                  style={{ border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-secondary)', padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onClick={() => setSelectedDevice(deviceId)}
+                  title="View Telemetry Diagnostics"
+                  disabled={!telemetry[deviceId]}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                  </svg>
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {selectedDevice && telemetry[selectedDevice] && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(7, 10, 19, 0.85)', backdropFilter: 'blur(8px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="panel" style={{ width: '480px', maxWidth: '90%', margin: '1rem', border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
+            <div className="panel-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 className="panel-title" style={{ fontSize: '1.2rem', margin: 0 }}>
+                Telemetry Diagnostics: {selectedDevice}
+              </h3>
+              <button
+                onClick={() => setSelectedDevice(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.5rem', lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div style={{ padding: '1.5rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Operating System:</span>
+                <span className="text-mono" style={{ textTransform: 'capitalize' }}>{telemetry[selectedDevice].os}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>System Architecture:</span>
+                <span className="text-mono">{telemetry[selectedDevice].arch}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Go Runtime:</span>
+                <span className="text-mono">{telemetry[selectedDevice].go_version}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Goroutines:</span>
+                <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{telemetry[selectedDevice].goroutines}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Uptime:</span>
+                <span className="text-mono">{formatUptime(telemetry[selectedDevice].uptime_secs)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Disk Storage Used:</span>
+                <span className="text-mono" style={{ color: 'var(--accent-red)' }}>{telemetry[selectedDevice].disk_usage_pct.toFixed(1)}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #16223f', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Telemetry Pulled (UTC):</span>
+                <span className="text-mono" style={{ fontSize: '0.85rem' }}>{new Date(telemetry[selectedDevice].timestamp).toISOString().replace('T', ' ').substring(0, 19)}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <button className="connect-btn" style={{ width: 'auto', padding: '0.5rem 1.5rem' }} onClick={() => setSelectedDevice(null)}>
+                Close Diagnostics
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
