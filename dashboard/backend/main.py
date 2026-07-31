@@ -3,6 +3,7 @@ import uuid
 import re
 import csv
 import io
+import pyotp
 import time
 import requests
 from datetime import datetime, timedelta, timezone
@@ -172,6 +173,13 @@ class UserResponse(BaseModel):
 class ChangeRolePayload(BaseModel):
     user_id: int
     role: str
+
+class MFASetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+class MFAVerifyPayload(BaseModel):
+    code: str
 
 # ==========================================
 # SECURITY UTILITIES
@@ -559,3 +567,50 @@ def clear_audit_logs(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to clear audit logs: {e}")
+
+@app.post("/api/auth/mfa/setup", response_model=MFASetupResponse)
+def setup_mfa(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    secret = pyotp.random_base32()
+    totp = pyotp.TOTP(secret)
+    provisioning_uri = totp.provisioning_uri(name=current_user.email, issuer_name="SecureRemoteAccess")
+    
+    current_user.mfa_secret = secret
+    current_user.mfa_enabled = False # disable until verified
+    db.commit()
+    
+    return {"secret": secret, "provisioning_uri": provisioning_uri}
+
+@app.post("/api/auth/mfa/verify")
+def verify_mfa(
+    payload: MFAVerifyPayload,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.mfa_secret:
+        raise HTTPException(status_code=400, detail="MFA setup has not been initiated.")
+        
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if totp.verify(payload.code):
+        current_user.mfa_enabled = True
+        db.commit()
+        return {"status": "success", "message": "Two-factor authentication enabled successfully."}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid verification code.")
+
+@app.post("/api/auth/mfa/disable")
+def disable_mfa(
+    payload: MFAVerifyPayload,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already disabled.")
+        
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if totp.verify(payload.code):
+        current_user.mfa_enabled = False
+        current_user.mfa_secret = None
+        db.commit()
+        return {"status": "success", "message": "Two-factor authentication disabled successfully."}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid verification code.")
