@@ -14,6 +14,10 @@ interface ConnectionStats {
   frameCount: number;
   bytesReceived: number;
   fps: number;
+  bitrate: number;
+  packetsLost: number;
+  jitter: number;
+  rtt: number;
 }
 
 export const SessionViewer: React.FC<SessionViewerProps> = ({
@@ -74,9 +78,14 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
     frameCount: 0,
     bytesReceived: 0,
     fps: 0,
+    bitrate: 0,
+    packetsLost: 0,
+    jitter: 0,
+    rtt: 0,
   });
 
   const lastFramesRef = useRef<number>(0);
+  const lastBytesRef = useRef<number>(0);
 
   // 1. Audit Log Session Start
   useEffect(() => {
@@ -204,7 +213,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
     };
   }, [sessionId]);
 
-  // 3. WebRTC Stats Collector (Bytes Received & FPS)
+  // 3. WebRTC Stats Collector (Bytes Received, FPS, Bitrate, Jitter, RTT)
   useEffect(() => {
     if (connectionState !== 'connected' || !pcRef.current) return;
 
@@ -216,16 +225,35 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
           if (report.type === 'inbound-rtp' && report.kind === 'video') {
             const bytes = report.bytesReceived || 0;
             const frames = report.framesDecoded || 0;
+            const lost = report.packetsLost || 0;
+            const jit = report.jitter || 0;
+            
             setStats((prev) => {
               const frameDiff = frames - lastFramesRef.current;
               lastFramesRef.current = frames;
+              
+              const bytesDiff = bytes - lastBytesRef.current;
+              lastBytesRef.current = bytes;
+              
+              const kbps = (bytesDiff * 8) / 1000;
+              
               return {
                 ...prev,
                 bytesReceived: bytes,
                 frameCount: frames,
                 fps: frameDiff > 0 ? frameDiff : 0,
+                bitrate: kbps > 0 ? Math.round(kbps) : 0,
+                packetsLost: lost,
+                jitter: jit * 1000,
               };
             });
+          }
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            const rtt = report.currentRoundTripTime || 0;
+            setStats((prev) => ({
+              ...prev,
+              rtt: rtt * 1000,
+            }));
           }
         });
       } catch (e) {
@@ -440,6 +468,30 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
             <span className="stat-label">Frame Rate</span>
             <span className="stat-value" style={{ color: stats.fps > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
               {stats.fps} FPS
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Latency (RTT)</span>
+            <span className="stat-value" style={{ color: stats.rtt > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
+              {stats.rtt > 0 ? `${stats.rtt.toFixed(0)} ms` : 'N/A'}
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Network Jitter</span>
+            <span className="stat-value">
+              {stats.jitter > 0 ? `${stats.jitter.toFixed(1)} ms` : '0 ms'}
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Packet Loss</span>
+            <span className="stat-value" style={{ color: stats.packetsLost > 0 ? 'var(--accent-red)' : 'var(--text-secondary)' }}>
+              {stats.packetsLost} pkts
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Throughput</span>
+            <span className="stat-value" style={{ color: stats.bitrate > 0 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+              {stats.bitrate > 0 ? `${stats.bitrate} kbps` : '0 kbps'}
             </span>
           </div>
         </div>
