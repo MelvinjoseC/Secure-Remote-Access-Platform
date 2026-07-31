@@ -8,11 +8,11 @@ interface DeviceListProps {
 
 export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onConnect }) => {
   const [devices, setDevices] = useState<string[]>([]);
+  const [telemetry, setTelemetry] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDevices = async () => {
-    setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${backendUrl}/api/devices`, {
@@ -28,6 +28,17 @@ export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onCon
       }
       const data = await res.json();
       setDevices(data);
+
+      // Fetch telemetry cache
+      const telRes = await fetch(`${backendUrl}/api/devices/telemetry`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (telRes.ok) {
+        const telData = await telRes.json();
+        setTelemetry(telData);
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred.');
     } finally {
@@ -95,7 +106,9 @@ export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onCon
             <div key={deviceId} className="device-card online">
               <div className="device-card-header">
                 <div className="device-info">
-                  <span className="device-type">Industrial Device</span>
+                  <span className="device-type">
+                    {telemetry[deviceId] && telemetry[deviceId].os === 'windows' ? 'Windows Workstation' : 'Linux Drone Agent'}
+                  </span>
                   <span className="device-id">{deviceId}</span>
                 </div>
                 <span className="status-badge online">
@@ -103,9 +116,48 @@ export const DeviceList: React.FC<DeviceListProps> = ({ token, backendUrl, onCon
                   Active
                 </span>
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Outbound-only connection: Encrypted (DTLS / SRTP)
+              
+              <div style={{ margin: '1.25rem 0 1rem 0' }}>
+                {telemetry[deviceId] ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span>System Architecture:</span>
+                      <span className="text-mono">
+                        {telemetry[deviceId].os} ({telemetry[deviceId].arch})
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>CPU Profiler:</span>
+                        <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                          {telemetry[deviceId].cpu_percent.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: '#121926', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${telemetry[deviceId].cpu_percent}%`, height: '100%', background: 'var(--accent-cyan)', transition: 'width 0.5s ease' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Memory Allocation:</span>
+                        <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
+                          {telemetry[deviceId].ram_usage_mb.toFixed(2)} MB
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: '#121926', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min((telemetry[deviceId].ram_usage_mb / 10.0) * 100, 100)}%`, height: '100%', background: 'var(--accent-green)', transition: 'width 0.5s ease' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                    Synchronizing device resource metrics...
+                  </div>
+                )}
               </div>
+
               <div className="device-card-actions">
                 <button className="connect-btn" onClick={() => onConnect(deviceId)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
