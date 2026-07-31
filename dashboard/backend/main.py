@@ -1,5 +1,6 @@
 import os
 import uuid
+import re
 import time
 import requests
 from datetime import datetime, timedelta, timezone
@@ -165,6 +166,33 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
+def validate_password_complexity(password: str):
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long."
+        )
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one lowercase letter."
+        )
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one uppercase letter."
+        )
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one digit."
+        )
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one special character."
+        )
+
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -226,6 +254,8 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     db_user = db.query(UserDB).filter(UserDB.email == user_data.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+    
+    validate_password_complexity(user_data.password)
     
     hashed_pwd = get_password_hash(user_data.password)
     new_user = UserDB(email=user_data.email, hashed_password=hashed_pwd)
