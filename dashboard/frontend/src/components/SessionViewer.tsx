@@ -28,6 +28,39 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<string>('initializing');
   const [error, setError] = useState<string | null>(null);
+  const [qualityPreset, setQualityPreset] = useState<string>('medium');
+
+  const handleQualityPresetChange = (preset: string) => {
+    setQualityPreset(preset);
+    
+    let width = 800;
+    let height = 600;
+    let fps = 10;
+    let bitrate = 800;
+
+    if (preset === 'high') {
+      width = 1920;
+      height = 1080;
+      fps = 20;
+      bitrate = 2000;
+    } else if (preset === 'low') {
+      width = 640;
+      height = 480;
+      fps = 5;
+      bitrate = 300;
+    }
+
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'quality_change',
+        width,
+        height,
+        fps,
+        bitrate
+      }));
+    }
+  };
 
   // Connection references
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -408,6 +441,28 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
             <span className="stat-value" style={{ color: stats.fps > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
               {stats.fps} FPS
             </span>
+          </div>
+        </div>
+
+        <div className="stats-card">
+          <h3 className="stats-title">Stream Configuration</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Video Quality:</span>
+              <select
+                value={qualityPreset}
+                onChange={(e) => handleQualityPresetChange(e.target.value)}
+                style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
+                disabled={connectionState !== 'connected'}
+              >
+                <option value="high">High (1080p @ 20fps)</option>
+                <option value="medium">Medium (720p @ 10fps)</option>
+                <option value="low">Low (480p @ 5fps)</option>
+              </select>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Alters resolution and frame rate on the agent dynamic encoder instantly.
+            </div>
           </div>
         </div>
 
