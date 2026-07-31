@@ -3,8 +3,9 @@ import { DeviceList } from './components/DeviceList';
 import { SessionViewer } from './components/SessionViewer';
 import { AuditLogs } from './components/AuditLogs';
 import { UserManagement } from './components/UserManagement';
+import { SecuritySettings } from './components/SecuritySettings';
 
-type Page = 'devices' | 'session' | 'logs' | 'users';
+type Page = 'devices' | 'session' | 'logs' | 'users' | 'settings';
 
 export default function App() {
   // Auth state
@@ -241,6 +242,18 @@ export default function App() {
             </button>
           )}
 
+          <button
+            className={`nav-btn ${currentPage === 'settings' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('settings')}
+            disabled={currentPage === 'session'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            Security Settings
+          </button>
+
           <div className="user-status">
             <span className="user-email">{email}</span>
             <button className="logout-btn" onClick={handleLogout} disabled={currentPage === 'session'}>
@@ -278,6 +291,13 @@ export default function App() {
 
         {currentPage === 'users' && role === 'admin' && (
           <UserManagement
+            token={token}
+            backendUrl={backendUrl}
+          />
+        )}
+
+        {currentPage === 'settings' && (
+          <SecuritySettings
             token={token}
             backendUrl={backendUrl}
           />
