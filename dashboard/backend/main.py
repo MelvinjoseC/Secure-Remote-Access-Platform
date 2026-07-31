@@ -10,7 +10,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
 import jwt
@@ -42,6 +42,9 @@ class UserDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="operator")
+    mfa_enabled = Column(Boolean, nullable=False, default=False)
+    mfa_secret = Column(String, nullable=True)
 
 class AuditLogDB(Base):
     __tablename__ = "audit_logs"
@@ -59,10 +62,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def seed_data(db: Session):
     # Check if we have users
     if db.query(UserDB).count() == 0:
-        print("Seeding database with demo operator...")
+        print("Seeding database with default accounts...")
         hashed_pwd = pwd_context.hash("Password123!")
-        demo_user = UserDB(email="demo@platform.local", hashed_password=hashed_pwd)
-        db.add(demo_user)
+        admin_user = UserDB(email="admin@platform.local", hashed_password=hashed_pwd, role="admin")
+        operator_user = UserDB(email="operator@platform.local", hashed_password=hashed_pwd, role="operator")
+        auditor_user = UserDB(email="auditor@platform.local", hashed_password=hashed_pwd, role="auditor")
+        db.add(admin_user)
+        db.add(operator_user)
+        db.add(auditor_user)
         db.commit()
         
     # Check if we have audit logs
@@ -131,6 +138,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     email: str
+    role: str
 
 class SessionStart(BaseModel):
     device_id: str
@@ -225,8 +233,8 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     
-    access_token = create_access_token(data={"sub": new_user.email})
-    return {"access_token": access_token, "token_type": "bearer", "email": new_user.email}
+    access_token = create_access_token(data={"sub": new_user.email, "role": new_user.role})
+    return {"access_token": access_token, "token_type": "bearer", "email": new_user.email, "role": new_user.role}
 
 @app.post("/api/auth/login", response_model=Token)
 def login(request: Request, user_data: UserLogin, db: Session = Depends(get_db)):
@@ -243,8 +251,8 @@ def login(request: Request, user_data: UserLogin, db: Session = Depends(get_db))
     if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
-    access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer", "email": user.email}
+    access_token = create_access_token(data={"sub": user.email, "role": user.role})
+    return {"access_token": access_token, "token_type": "bearer", "email": user.email, "role": user.role}
 
 @app.get("/api/devices", response_model=List[str])
 def list_devices(current_user: UserDB = Depends(get_current_user)):
