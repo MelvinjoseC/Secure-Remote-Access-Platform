@@ -316,6 +316,10 @@ def login(request: Request, user_data: UserLogin, db: Session = Depends(get_db))
     access_token = create_access_token(data={"sub": user.email, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer", "email": user.email, "role": user.role}
 
+@app.get("/api/auth/me", response_model=UserResponse)
+def get_me(current_user: UserDB = Depends(get_current_user)):
+    return current_user
+
 @app.get("/api/devices", response_model=List[str])
 def list_devices(current_user: UserDB = Depends(get_current_user)):
     """
