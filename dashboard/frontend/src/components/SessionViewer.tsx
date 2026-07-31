@@ -70,6 +70,29 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const inputChannelRef = useRef<RTCDataChannel | null>(null);
+  const clipboardChannelRef = useRef<RTCDataChannel | null>(null);
+
+  const [clipboardText, setClipboardText] = useState<string>('');
+
+  const handlePushClipboard = () => {
+    const channel = clipboardChannelRef.current;
+    if (channel && channel.readyState === 'open') {
+      channel.send(clipboardText);
+    }
+  };
+
+  const handlePullClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setClipboardText(text);
+      const channel = clipboardChannelRef.current;
+      if (channel && channel.readyState === 'open') {
+        channel.send(text);
+      }
+    } catch (err) {
+      console.warn('Failed to read browser clipboard:', err);
+    }
+  };
 
   // Statistics
   const [stats, setStats] = useState<ConnectionStats>({
@@ -133,6 +156,20 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
     // Create Input Data Channel (replaces media data-channel, which is now a real video track)
     const inputChannel = pc.createDataChannel('input', { ordered: true });
     inputChannelRef.current = inputChannel;
+
+    // Create Clipboard Data Channel
+    const clipboardChannel = pc.createDataChannel('clipboard', { ordered: true });
+    clipboardChannelRef.current = clipboardChannel;
+    
+    clipboardChannel.onmessage = (event) => {
+      const text = event.data;
+      setClipboardText(text);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch((err) => {
+          console.warn('Could not auto-write to local clipboard:', err);
+        });
+      }
+    };
 
     // Connect to Signaling Server WebSocket
     const cleanSignalingUrl = signalingUrl.replace(/^http/, 'ws');
@@ -514,6 +551,41 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Alters resolution and frame rate on the agent dynamic encoder instantly.
+            </div>
+          </div>
+        </div>
+
+        <div className="stats-card">
+          <h3 className="stats-title">Shared Clipboard</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <textarea
+              className="form-input text-mono"
+              rows={3}
+              value={clipboardText}
+              onChange={(e) => setClipboardText(e.target.value)}
+              placeholder="Type or paste text to sync..."
+              style={{ fontSize: '0.8rem', resize: 'vertical', width: '100%', padding: '0.4rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-primary)' }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                className="connect-btn"
+                style={{ flex: 1, fontSize: '0.8rem', padding: '0.4rem 0' }}
+                onClick={handlePushClipboard}
+                disabled={connectionState !== 'connected'}
+              >
+                Push
+              </button>
+              <button
+                className="nav-btn"
+                style={{ flex: 1, fontSize: '0.8rem', padding: '0.4rem 0', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-primary)', borderRadius: '4px' }}
+                onClick={handlePullClipboard}
+                disabled={connectionState !== 'connected'}
+              >
+                Pull & Sync
+              </button>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+              Push sends text to the target machine's clipboard. Pull & Sync fetches your local clipboard and shares it.
             </div>
           </div>
         </div>
