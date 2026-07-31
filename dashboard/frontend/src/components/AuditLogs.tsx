@@ -17,12 +17,20 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ token, backendUrl }) => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchLogs = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${backendUrl}/api/audit-logs`, {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      
+      const res = await fetch(`${backendUrl}/api/audit-logs?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -41,7 +49,11 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ token, backendUrl }) => {
 
   const handleExport = async (format: 'csv' | 'json') => {
     try {
-      const res = await fetch(`${backendUrl}/api/audit-logs/export/${format}`, {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+
+      const res = await fetch(`${backendUrl}/api/audit-logs/export/${format}?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -118,6 +130,35 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ token, backendUrl }) => {
             {loading ? 'Refreshing...' : 'Refresh Logs'}
           </button>
         </div>
+      </div>
+
+      <div className="filter-bar" style={{ display: 'flex', gap: '1rem', padding: '1rem', background: '#0b0f19', borderBottom: '1px solid var(--border-color)', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1.5rem', borderRadius: '4px' }}>
+        <div style={{ flex: '1', minWidth: '240px' }}>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Search by operator or device..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ margin: 0, height: '38px', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }}
+            onKeyDown={(e) => { if (e.key === 'Enter') fetchLogs(); }}
+          />
+        </div>
+        <div>
+          <select
+            className="form-input"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ margin: 0, height: '38px', fontSize: '0.9rem', width: '180px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active Sessions</option>
+            <option value="completed">Completed Sessions</option>
+          </select>
+        </div>
+        <button className="connect-btn" style={{ width: 'auto', padding: '0.5rem 1.5rem', height: '38px' }} onClick={fetchLogs}>
+          Apply Filters
+        </button>
       </div>
 
       {error && (
