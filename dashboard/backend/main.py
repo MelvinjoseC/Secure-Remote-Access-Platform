@@ -160,6 +160,19 @@ class AuditLogResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    role: str
+    mfa_enabled: bool
+
+    class Config:
+        from_attributes = True
+
+class ChangeRolePayload(BaseModel):
+    user_id: int
+    role: str
+
 # ==========================================
 # SECURITY UTILITIES
 # ==========================================
@@ -221,6 +234,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def get_current_admin(current_user: UserDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation restricted to administrators only."
+        )
+    return current_user
 
 # Simple in-memory login rate limiter (max 5 requests per 60 seconds per IP)
 from collections import defaultdict
@@ -465,3 +486,45 @@ def export_audit_logs_json(
         content=data,
         headers={"Content-Disposition": "attachment; filename=audit-logs.json"}
     )
+
+@app.get("/api/admin/users", response_model=List[UserResponse])
+def admin_list_users(
+    current_admin: UserDB = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    users = db.query(UserDB).order_by(UserDB.email).all()
+    return users
+
+@app.post("/api/admin/users/role", response_model=UserResponse)
+def change_user_role(
+    payload: ChangeRolePayload,
+    current_admin: UserDB = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    if payload.role not in ["admin", "operator", "auditor"]:
+        raise HTTPException(status_code=400, detail="Invalid role specified.")
+        
+    user = db.query(UserDB).filter(UserDB.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Administrators cannot modify their own roles.")
+        
+    user.role = payload.role
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.post("/api/admin/audit-logs/clear")
+def clear_audit_logs(
+    current_admin: UserDB = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    try:
+        db.query(AuditLogDB).delete()
+        db.commit()
+        return {"status": "success", "message": "All compliance audit logs cleared."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear audit logs: {e}")
