@@ -93,13 +93,31 @@ func main() {
 	}
 
 	// 2. Setup Shutdown Handlers
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// 3. Connect to Signaling Server
+	// Keep trying to connect/run the websocket session until SIGINT/SIGTERM
+	for {
+		// Run a single websocket connection session
+		runSession(config, sigChan)
+
+		// Check if we received shutdown signal
+		select {
+		case <-sigChan:
+			log.Println("Shutting down agent...")
+			return
+		default:
+			log.Println("Signaling WebSocket disconnected. Reconnecting in 5 seconds...")
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
+func runSession(config Config, sigChan chan os.Signal) {
 	u, err := url.Parse(config.SignalingURL)
 	if err != nil {
-		log.Fatalf("Invalid signaling URL: %v", err)
+		log.Printf("Invalid signaling URL: %v", err)
+		return
 	}
 
 	registerURL := u.String() + "/agent/register?deviceId=" + config.DeviceID + "&token=" + config.AuthToken
@@ -129,12 +147,18 @@ func main() {
 	var conn *websocket.Conn
 	// Retry loop for connecting to signaling server
 	for {
+		select {
+		case <-sigChan:
+			log.Println("Shutdown received during connection retry.")
+			return
+		default:
+		}
+
 		conn, _, err = dialer.Dial(registerURL, nil)
 		if err != nil {
 			log.Printf("Dial failed: %v. Retrying in 5 seconds...", err)
 			select {
-			case <-shutdown:
-				log.Println("Shutdown received during connection retry.")
+			case <-sigChan:
 				return
 			case <-time.After(5 * time.Second):
 				continue
@@ -149,13 +173,15 @@ func main() {
 	wsMutex.Unlock()
 	log.Println("Connected to Signaling Server successfully!")
 
+	sessionShutdown := make(chan struct{})
+
 	// Goroutine to send periodic telemetry reports
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-shutdown:
+			case <-sessionShutdown:
 				return
 			case <-ticker.C:
 				data := collectTelemetry()
@@ -187,16 +213,23 @@ func main() {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Printf("WebSocket disconnected: %v", err)
-				shutdown <- syscall.SIGTERM
+				close(sessionShutdown)
 				return
 			}
 			handleSignalingMessage(message, &config)
 		}
 	}()
 
-	<-shutdown
-	log.Println("Shutting down agent...")
-	closePeerConnection()
+	// Wait for OS shutdown signal OR websocket session disconnect
+	select {
+	case <-sigChan:
+		log.Println("Session aborted due to OS shutdown signal.")
+		close(sessionShutdown)
+		closePeerConnection()
+	case <-sessionShutdown:
+		log.Println("Session terminated due to WebSocket connection loss.")
+		closePeerConnection()
+	}
 }
 
 func closePeerConnection() {
