@@ -339,6 +339,34 @@ func handleSignalingMessage(message []byte, config *Config) {
 					HandleInputEvent(msg.Data)
 				})
 			}
+
+			if d.Label() == "clipboard" {
+				d.OnMessage(func(msg webrtc.DataChannelMessage) {
+					text := string(msg.Data)
+					log.Printf("Received clipboard sync from client: %s", text)
+					writeToSystemClipboard(text)
+				})
+
+				go func() {
+					lastVal := ""
+					ticker := time.NewTicker(1 * time.Second)
+					defer ticker.Stop()
+
+					for {
+						select {
+						case <-ticker.C:
+							if d.ReadyState() != webrtc.DataChannelStateOpen {
+								return
+							}
+							curr := readSystemClipboard()
+							if curr != lastVal && curr != "" {
+								lastVal = curr
+								_ = d.SendText(curr)
+							}
+						}
+					}
+				}()
+			}
 		})
 
 		// Create Answer
