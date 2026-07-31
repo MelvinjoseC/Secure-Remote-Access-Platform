@@ -121,9 +121,16 @@ func handleAgentRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In a production app, we would validate the registration token here
-	// TODO(stage-3): Integrate token validation against db/dashboard backend
-	_ = token
+	// Validate agent registration token against configured key
+	expectedAgentToken := os.Getenv("AGENT_AUTH_TOKEN")
+	if expectedAgentToken == "" {
+		expectedAgentToken = "agent-secure-token-123"
+	}
+	if token != expectedAgentToken {
+		http.Error(w, "Unauthorized: invalid agent token", http.StatusUnauthorized)
+		log.Printf("Agent registration rejected for %s: invalid token", deviceId)
+		return
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -188,8 +195,20 @@ func handleClientConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO(stage-3): Authenticate client session token
-	_ = token
+	// Validate client JWT token
+	claims, err := verifyToken(token)
+	if err != nil {
+		http.Error(w, "Unauthorized: invalid session token", http.StatusUnauthorized)
+		log.Printf("Client connect rejected for device %s: %v", deviceId, err)
+		return
+	}
+
+	// Restrict connection capability using RBAC roles
+	if claims.Role != "admin" && claims.Role != "operator" {
+		http.Error(w, "Forbidden: insufficient permissions", http.StatusForbidden)
+		log.Printf("User %s rejected for device %s: user is %s (only admin/operator allowed)", claims.Sub, deviceId, claims.Role)
+		return
+	}
 
 	hub.mu.RLock()
 	agentConn, hasAgent := hub.agents[deviceId]
