@@ -379,6 +379,44 @@ func handleSignalingMessage(message []byte, config *Config) {
 			}
 		}
 
+	case "quality_change":
+		log.Println("Received Quality Change request from Client")
+		var qMsg struct {
+			Width   int `json:"width"`
+			Height  int `json:"height"`
+			FPS     int `json:"fps"`
+			Bitrate int `json:"bitrate"`
+		}
+		if err := json.Unmarshal(message, &qMsg); err == nil {
+			qualityMutex.Lock()
+			currentQuality.Width = qMsg.Width
+			currentQuality.Height = qMsg.Height
+			currentQuality.FPS = qMsg.FPS
+			currentQuality.Bitrate = qMsg.Bitrate
+			qualityMutex.Unlock()
+			
+			pcMutex.Lock()
+			isStreaming := streaming
+			pc := activePC
+			pcMutex.Unlock()
+			
+			if isStreaming && pc != nil {
+				log.Println("Dynamically restarting screen streaming session with new parameters...")
+				var videoTrack *webrtc.TrackLocalStaticSample
+				for _, sender := range pc.GetSenders() {
+					if sender.Track() != nil && sender.Track().Kind() == webrtc.RTPCodecTypeVideo {
+						if vt, ok := sender.Track().(*webrtc.TrackLocalStaticSample); ok {
+							videoTrack = vt
+							break
+						}
+					}
+				}
+				if videoTrack != nil {
+					startScreenStreaming(videoTrack)
+				}
+			}
+		}
+
 	case "disconnect":
 		log.Println("Received Disconnect signal from Signaling Server. Resetting...")
 		closePeerConnection()
