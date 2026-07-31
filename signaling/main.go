@@ -273,7 +273,7 @@ func handleClientConnect(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Client disconnected for device %s", deviceId)
 	}()
 
-	// Read messages from Client (browser) and relay to Agent
+	// Read messages from Client (browser) and relay to Agent (SDP offers, ICE candidates, and quality control commands)
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
