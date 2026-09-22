@@ -1,0 +1,114 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test-backend:
+    name: Backend CI (Python 3.12)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dashboard/backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest httpx
+          pip install -r requirements.txt
+
+      - name: Lint Backend Code with Flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all errors as warnings. Max complexity 15.
+          flake8 . --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+
+      - name: Validate Python Compilation
+        run: |
+          python -m py_compile main.py
+
+  lint-and-test-go:
+    name: Go Services CI (Signaling & Agent)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          check-latest: true
+
+      - name: Verify Signaling Server
+        working-directory: ./signaling
+        run: |
+          go mod tidy
+          go vet ./...
+          go build -v ./...
+
+      - name: Verify Agent
+        working-directory: ./agent
+        run: |
+          go mod tidy
+          go vet -tags docker ./...
+          go build -tags docker -v ./...
+
+  lint-and-build-frontend:
+    name: Frontend CI (Node 20 / Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dashboard/frontend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/frontend/package.json
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Run Linter
+        run: npm run lint
+
+      - name: Build Production Assets
+        run: npm run build
+
+  validate-docker-compose:
+    name: Validate Docker Compose Configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Local Compose
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate Production Compose
+        run: docker compose -f docker-compose.prod.yml config --quiet
+
+      - name: Validate Monitoring Compose
+        run: docker compose -f docker-compose.monitoring.yml config --quiet
