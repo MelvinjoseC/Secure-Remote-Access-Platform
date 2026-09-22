@@ -1,0 +1,47 @@
+groups:
+  - name: secure_platform_alerts
+    rules:
+      - alert: BackendServiceDown
+        expr: up{job="dashboard-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FastAPI Backend service unreachable"
+          description: "Instance {{ $labels.instance }} has been unreachable for more than 1 minute."
+
+      - alert: SignalingServiceDown
+        expr: up{job="signaling"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Signaling Server unreachable"
+          description: "WebRTC Signaling router {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: HighHttpErrorRate
+        expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) * 100 > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated 5xx HTTP error rate detected"
+          description: "HTTP 5xx error rate is currently {{ $value | printf \"%.2f\" }}% (> 5%)."
+
+      - alert: HighHttpLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2.0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P95 API latency"
+          description: "P95 latency across API routes is {{ $value | printf \"%.2f\" }}s (> 2.0s)."
+
+      - alert: ZeroRegisteredAgents
+        expr: signaling_connected_agents == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Zero agents currently registered"
+          description: "No remote device agents have registered with signaling server in 10 minutes."
