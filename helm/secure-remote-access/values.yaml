@@ -1,0 +1,102 @@
+global:
+  environment: production
+  imageRegistry: ghcr.io/melvinjosec
+
+backend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/melvinjosec/secure-remote-access-backend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
+
+signaling:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/melvinjosec/secure-remote-access-signaling
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 8443
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/melvinjosec/secure-remote-access-frontend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: access.platform.local
+      paths:
+        - path: /api/
+          pathType: Prefix
+          service: backend
+        - path: /client/connect
+          pathType: Prefix
+          service: signaling
+        - path: /agent/register
+          pathType: Prefix
+          service: signaling
+        - path: /signaling/
+          pathType: Prefix
+          service: signaling
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls:
+    - secretName: platform-tls-cert
+      hosts:
+        - access.platform.local
+
+secrets:
+  existingSecret: ""
+  databaseUrl: "postgresql://platform_admin:ChangeMePassword123!@postgres:5432/remote_access"
+  jwtSecret: "ProductionJwtSecretKey2026!"
+  signalingApiKey: "ProductionSignalingSecretKey2026!"
+  agentAuthToken: "ProductionAgentTokenKey2026!"

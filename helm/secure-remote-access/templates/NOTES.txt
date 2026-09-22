@@ -1,0 +1,22 @@
+========================================================================
+🚀 Secure Remote Access Platform has been successfully deployed!
+========================================================================
+
+1. Access the Operations Dashboard:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+   https://{{ .host }}
+{{- end }}
+{{- else }}
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "secure-remote-access.fullname" . }}-frontend 8080:80
+   Open: http://localhost:8080
+{{- end }}
+
+2. Check deployment status:
+   kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/part-of={{ include "secure-remote-access.name" . }}"
+
+3. Tail Signaling Server WebSockets:
+   kubectl logs -n {{ .Release.Namespace }} -l "app.kubernetes.io/component=signaling" -f
+
+4. Tail Backend API logs:
+   kubectl logs -n {{ .Release.Namespace }} -l "app.kubernetes.io/component=backend" -f

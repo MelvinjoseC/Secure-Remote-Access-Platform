@@ -1,0 +1,49 @@
+{{- if .Values.backend.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "secure-remote-access.fullname" . }}-backend
+  labels:
+    {{- include "secure-remote-access.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "secure-remote-access.fullname" . }}-backend
+  minReplicas: {{ .Values.backend.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.backend.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.backend.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.backend.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+---
+{{- if .Values.signaling.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "secure-remote-access.fullname" . }}-signaling
+  labels:
+    {{- include "secure-remote-access.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "secure-remote-access.fullname" . }}-signaling
+  minReplicas: {{ .Values.signaling.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.signaling.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.signaling.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.signaling.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}

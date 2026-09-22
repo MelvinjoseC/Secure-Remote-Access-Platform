@@ -1,0 +1,14 @@
+apiVersion: v2
+name: secure-remote-access
+description: Enterprise Helm chart for Secure Remote Access Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - webrtc
+  - remote-access
+  - security
+  - devops
+maintainers:
+  - name: MelvinjoseC
+    email: 165891174+MelvinjoseC@users.noreply.github.com
