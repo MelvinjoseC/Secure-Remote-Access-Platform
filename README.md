@@ -1,95 +1,108 @@
 # Secure Remote Access Platform Operations Console
 
-This repository contains a secure, enterprise-grade outbound-only remote access platform built for industrial, drone, and marine operations center environments.
+[![CI Pipeline](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/ci.yml)
+[![DevSecOps Scan](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/security.yml/badge.svg)](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/security.yml)
+[![Publish Containers](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/MelvinjoseC/Secure-Remote-Access-Platform/actions/workflows/docker-publish.yml)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Kustomize%20%26%20Helm-blue?logo=kubernetes)](./k8s)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform%20AWS-purple?logo=terraform)](./terraform)
+[![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus%20%26%20Grafana-orange?logo=prometheus)](./monitoring)
+
+An enterprise-grade, outbound-only secure remote access platform engineered for mission-critical industrial, drone, and marine operations centers.
 
 ---
 
-## 🚀 Advanced Features Implemented
+## 🏛️ Enterprise DevOps & Infrastructure Architecture
 
-1. **Role-Based Access Control (RBAC)**:
-   - Three distinct roles: `admin` (management and log clearing), `operator` (remote session connection), and `auditor` (read-only audit compliance).
-   - Dynamic user role updates inside an admin-exclusive `/users` dashboard panel.
+The platform is designed following modern cloud-native, zero-trust infrastructure principles:
 
-2. **Multi-Factor Authentication (MFA)**:
-   - Secure TOTP setup (`pyotp` backend integration) generating QR code pairing URIs.
-   - Multi-stage user authentication login flow requiring 6-digit verification codes.
-
-3. **System Telemetry & Live Diagnostics**:
-   - Periodic resource metrics (CPU, RAM, Disk space, Goroutine count, Go version, Uptime) reported by Go agents.
-   - In-depth telemetry details modal and real-time dashboard progress meters.
-
-4. **Dynamic Video Scaling & Quality Presets**:
-   - Stream quality control panel supporting High (1080p @ 20fps), Medium (720p @ 10fps), and Low (480p @ 5fps) presets.
-   - Restarts FFmpeg compression sub-processes on the fly without dropping the WebRTC peer connection.
-
-5. **WebRTC Diagnostics Sidebar**:
-   - Real-time network statistics tracking current Latency (RTT), Jitter Buffer depth, Packet Loss totals, and Throughput Bitrates using browser `getStats()`.
-
-6. **Bidirectional Clipboard Sync**:
-   - Custom `"clipboard"` WebRTC data channel relaying clipboard changes between local browsers and remote hosts with graceful in-memory fallbacks.
-
-7. **Agent Auto-Reconnect & Fault Resilience**:
-   - Wrap connection sockets in a persistent loop; the agent will re-dial the signaling server, re-register, and resume active control loops seamlessly if connection drops.
-
----
-
-## Architecture
-
-The platform consists of three main components:
-1. **`/agent`**: A Go client running on the target machine. Captures frames (physical screens or simulated canvas) and encodes them using dynamic FFmpeg pipelines. Pipes input injections and clipboard state over WebRTC channels.
-2. **`/signaling`**: A secure WebRTC handshake router caching telemetry data and relaying ICE/SDP control signals between agents and operator consoles.
-3. **`/dashboard`**:
-   - **`backend`**: FastAPI application with a PostgreSQL database managing credentials, rate limits, session audits, user roles, and TOTP verification.
-   - **`frontend`**: React + TypeScript client styled with a premium dark cyber glassmorphic Operations Center look.
-
----
-
-## Quick Start (Docker Compose)
-
-The entire stack is containerized and can be started with a single command. 
-
-### Prerequisites
-- Docker and Docker Compose (v2.x+) installed.
-
-### Run the Stack
-Run the following command in the repository root directory:
-```bash
-docker-compose up --build
+```
+                  ┌───────────────────────────────┐
+                  │    Operator Browser / App     │
+                  └──────────────┬────────────────┘
+                                 │ HTTPS / WSS (Port 443)
+                                 ▼
+                  ┌───────────────────────────────┐
+                  │  Production Nginx Gateway     │
+                  │  TLS 1.3, Rate-Limit, WSS Upgr│
+                  └──────────────┬────────────────┘
+         ┌───────────────────────┼───────────────────────┐
+         │ /                     │ /api/*                │ /client/*, /agent/*
+         ▼                       ▼                       ▼
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│Frontend (Nginx)  │    │Backend (FastAPI) │    │Signaling (Go Hub)│
+│Unprivileged SPA  │    │RBAC, MFA, Audit  │    │WebRTC Handshake  │
+└──────────────────┘    └────────┬─────────┘    └────────┬─────────┘
+                                 │                       │
+                                 ▼                       ▼
+                        ┌──────────────────┐    ┌──────────────────┐
+                        │  PostgreSQL 16   │    │Coturn STUN/TURN  │
+                        │  KMS Encrypted   │    │UDP 3478 / Relays │
+                        └──────────────────┘    └──────────────────┘
+                                                         ▲
+                                                         │ Outbound-only
+                                                ┌────────┴─────────┐
+                                                │  Remote Agent    │
+                                                │  (Go Client)     │
+                                                └──────────────────┘
 ```
 
-This will automatically:
-1. Spin up a cert-generator container to create SSL certificates for HTTPS/WSS in a shared volume.
-2. Launch a PostgreSQL database.
-3. Launch the Go signaling server on `https://localhost:8443`.
-4. Launch the FastAPI backend on `https://localhost:8000`.
-5. Launch the React dashboard on `https://localhost:5173`.
-6. Launch a test agent (`test-drone-01`) which registers with the signaling server.
+Detailed technical specs, data flows, and network boundary policies are documented in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-## Verifying the Flow
+## 🚀 Key Features
 
-1. **Access the Dashboard**:
-   Open your browser and navigate to: **`https://localhost:5173`**
-   
-   > [!NOTE]
-   > Since the containers use self-signed certificates for local HTTPS/WSS, your browser will display a security warning. Click **Advanced -> Proceed to localhost (unsafe)**. 
-   > For the WebRTC handshake to succeed, you should also visit `https://localhost:8443` in a new tab once and accept the warning to allow the browser to talk to the signaling server via WebSocket (`wss://`).
+1. **Hardened Container Security**:
+   - Multi-stage unprivileged Docker builds with non-root execution (`USER 10001:10001`).
+   - Automated DevSecOps scanning with Trivy (CVEs), Gitleaks (secrets), and Bandit (Python SAST).
+2. **High-Availability Kubernetes & Helm**:
+   - Production Kustomize bases and overlays (`dev` and `prod`).
+   - Configurable Helm chart (`helm/secure-remote-access`) with PodDisruptionBudgets, NetworkPolicies, and HorizontalPodAutoscalers.
+3. **Modular Infrastructure as Code (Terraform)**:
+   - AWS VPC, Multi-AZ RDS PostgreSQL with KMS encryption, Application Load Balancers, and Coturn STUN/TURN compute modules.
+4. **End-to-End Observability**:
+   - Native Prometheus `/metrics` instrumentation across FastAPI and Go signaling hubs.
+   - Production Grafana dashboard with alerting rules for packet loss, disconnect rates, and latency SLOs.
+5. **Operational Automation**:
+   - Unified `Makefile`, automated SHA-256 verified PostgreSQL backup/restore scripts, and synthetic smoke test suites.
 
-2. **Authenticate with Default Users**:
-   The system database is seeded on start with three default users (passwords are all `Password123!`):
-   - **Admin**: `admin@platform.local`
-   - **Operator**: `operator@platform.local`
-   - **Auditor**: `auditor@platform.local`
+---
 
-3. **MFA Enrollment**:
-   - Log in with operator credentials.
-   - Navigate to the **Security Settings** tab.
-   - Click **Set Up Two-Factor Authentication**.
-   - Scan the QR code or register the secret key in your authenticator app, type in the 6-digit code, and confirm.
-   - On your next login, the console will prompt for verification.
+## 📚 Documentation & Runbooks
 
-4. **Verify Session Auditing & Exports**:
-   - Establish a remote control session on `test-drone-01`.
-   - Click **Disconnect Session** in the viewer header.
-   - Navigate to the **Audit Logs** tab to search, filter, and export the logs to compliance CSV or JSON sheets.
+* [**Enterprise Architecture Guide**](./docs/ARCHITECTURE.md) - System design, zero-trust network boundaries, and WebRTC streaming architecture.
+* [**Production Deployment Guide**](./docs/DEPLOYMENT_GUIDE.md) - Step-by-step instructions for Docker Compose, Kubernetes, and AWS Terraform.
+* [**Site Reliability Runbook**](./docs/RUNBOOK.md) - Standard Operating Procedures (SOPs) for incident triage, secret rotation, and disaster recovery.
+* [**Makefile Reference**](./Makefile) - CLI commands for build, lint, test, backup, and health validation.
+
+---
+
+## ⚡ Quick Start
+
+### 1. Local Development (Docker Compose)
+```bash
+docker compose up -d --build
+```
+* Dashboard: `https://localhost:5173` | Signaling: `https://localhost:8443` | API: `https://localhost:8000`
+
+### 2. Production Stack (Hardened Nginx Gateway)
+```bash
+cp .env.example .env
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.monitoring.yml up -d
+make smoke-test
+```
+* Production Ingress: `https://localhost` (or domain)
+* Grafana Telemetry: `http://localhost:3000` (User: `admin` / `admin`)
+
+---
+
+## 🔐 Default Credentials (Dev Environment)
+
+| Account Role | Email | Default Password | Permissions |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin@platform.local` | `Password123!` | User management, audit logs, remote sessions |
+| **Operator** | `operator@platform.local` | `Password123!` | Remote device control and telemetry monitoring |
+| **Auditor** | `auditor@platform.local` | `Password123!` | Compliance audit log viewer and exports |
+
+*(Note: Change all default passwords and secrets before deploying to public networks).*
