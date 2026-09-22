@@ -6,7 +6,7 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 COPY go.mod ./
-COPY main.go ./
+COPY *.go ./
 
 RUN go mod tidy
 RUN go mod download
