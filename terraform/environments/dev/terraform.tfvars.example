@@ -1,0 +1,6 @@
+aws_region    = "us-east-1"
+environment   = "dev"
+project_name  = "secure-remote-access"
+db_password   = "DevSecretPassword123!"
+jwt_secret    = "DevJwtSecretKey2026!"
+turn_password = "DevTurnPassword456!"

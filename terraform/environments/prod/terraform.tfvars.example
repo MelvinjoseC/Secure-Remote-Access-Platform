@@ -1,0 +1,7 @@
+aws_region      = "us-east-1"
+environment     = "prod"
+project_name    = "secure-remote-access"
+db_password     = "ChangeMeToAStrongSecretPassword123!"
+jwt_secret      = "ChangeMeToAStrongJwtSecretKey2026!"
+turn_password   = "ChangeMeToATurnPassword456!"
+certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
