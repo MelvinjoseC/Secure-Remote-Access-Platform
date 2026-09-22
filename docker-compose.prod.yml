@@ -1,0 +1,212 @@
+networks:
+  secure-internal:
+    driver: bridge
+  edge-public:
+    driver: bridge
+
+volumes:
+  pgdata-prod:
+  certs-data:
+
+services:
+  # TLS Certificate Provisioner
+  certs-generator:
+    image: alpine:latest
+    networks:
+      - secure-internal
+    volumes:
+      - certs-data:/certs
+      - .:/app
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache openssl bash
+        cd /app
+        chmod +x ./generate-certs.sh
+        ./generate-certs.sh
+        cp -R ./certs/* /certs/
+        echo "SSL volume ready."
+
+  # Production Ingress / Reverse Proxy Gateway
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: remote-access-gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - certs-data:/certs:ro
+    networks:
+      - edge-public
+      - secure-internal
+    depends_on:
+      certs-generator:
+        condition: service_completed_successfully
+      dashboard-frontend:
+        condition: service_healthy
+      dashboard-backend:
+        condition: service_healthy
+      signaling:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Database (PostgreSQL 16)
+  db:
+    image: postgres:16-alpine
+    container_name: remote-access-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-remote_access}
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+    networks:
+      - secure-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # WebRTC Signaling Server (Go)
+  signaling:
+    build:
+      context: ./signaling
+      dockerfile: Dockerfile
+    container_name: remote-access-signaling
+    restart: always
+    environment:
+      PORT: "8443"
+      SIGNALING_API_KEY: ${SIGNALING_API_KEY:-dev-signaling-secret-key}
+      AGENT_AUTH_TOKEN: ${AGENT_AUTH_TOKEN:-agent-secure-token-123}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-dev-jwt-key}
+      SSL_CERT_FILE: "/certs/server.crt"
+      SSL_KEY_FILE: "/certs/server.key"
+    volumes:
+      - certs-data:/certs:ro
+    networks:
+      - secure-internal
+    depends_on:
+      certs-generator:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Dashboard API Backend (FastAPI)
+  dashboard-backend:
+    build:
+      context: ./dashboard/backend
+      dockerfile: Dockerfile
+    container_name: remote-access-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-remote_access}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-dev-jwt-key}
+      SIGNALING_API_URL: "https://signaling:8443"
+      SIGNALING_API_KEY: ${SIGNALING_API_KEY:-dev-signaling-secret-key}
+    volumes:
+      - certs-data:/certs:ro
+    networks:
+      - secure-internal
+    depends_on:
+      db:
+        condition: service_healthy
+      signaling:
+        condition: service_healthy
+      certs-generator:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Operations Dashboard Frontend (Production Nginx)
+  dashboard-frontend:
+    build:
+      context: ./dashboard/frontend
+      dockerfile: Dockerfile
+    container_name: remote-access-frontend
+    restart: always
+    networks:
+      - secure-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # STUN/TURN Server (Coturn)
+  turn:
+    image: coturn/coturn:4.6.2-alpine
+    container_name: remote-access-turn
+    restart: always
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-49200:49152-49200/udp"
+    command:
+      - -n
+      - --lt-cred-mech
+      - --fingerprint
+      - --no-multicast-peers
+      - --user=demo:password123
+      - --realm=platform.local
+      - --min-port=49152
+      - --max-port=49200
+      - --verbose
+    networks:
+      - edge-public
+      - secure-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
