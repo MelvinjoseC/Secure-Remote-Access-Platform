@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-ingress
+  namespace: secure-platform
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  tls:
+    - hosts:
+        - access.platform.local
+      secretName: platform-tls-cert
+  rules:
+    - host: access.platform.local
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-svc
+                port:
+                  number: 8000
+          - path: /client/connect
+            pathType: Prefix
+            backend:
+              service:
+                name: signaling-svc
+                port:
+                  number: 8443
+          - path: /agent/register
+            pathType: Prefix
+            backend:
+              service:
+                name: signaling-svc
+                port:
+                  number: 8443
+          - path: /signaling/
+            pathType: Prefix
+            backend:
+              service:
+                name: signaling-svc
+                port:
+                  number: 8443
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-svc
+                port:
+                  number: 80

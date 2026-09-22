@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  namespace: secure-platform
+  labels:
+    app.kubernetes.io/name: dashboard-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: dashboard-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+  namespace: secure-platform
+  labels:
+    app.kubernetes.io/name: dashboard-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: dashboard-backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signaling-svc
+  namespace: secure-platform
+  labels:
+    app.kubernetes.io/name: signaling
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8443
+      targetPort: 8443
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: signaling
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-svc
+  namespace: secure-platform
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app.kubernetes.io/name: postgres
