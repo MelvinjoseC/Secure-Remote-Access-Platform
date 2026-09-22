@@ -283,6 +283,56 @@ app.add_middleware(
 )
 
 # ==========================================
+# HEALTH & READINESS PROBES
+# ==========================================
+@app.get("/healthz")
+@app.get("/api/healthz")
+def healthz():
+    """Liveness probe: verifies process is alive and responsive."""
+    return {
+        "status": "healthy",
+        "service": "dashboard-backend",
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+@app.get("/readyz")
+@app.get("/api/readyz")
+def readyz(db: Session = Depends(get_db)):
+    """Readiness probe: verifies database connectivity and core dependencies."""
+    checks = {
+        "database": False,
+        "signaling": False,
+    }
+    # Check Database connectivity
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        checks["database"] = True
+    except Exception as e:
+        checks["database_error"] = str(e)
+
+    # Check Signaling Server reachability
+    try:
+        resp = requests.get(f"{SIGNALING_API_URL}/healthz", verify=False, timeout=3)
+        if resp.status_code == 200:
+            checks["signaling"] = True
+    except Exception as e:
+        checks["signaling_error"] = str(e)
+
+    if not checks["database"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "not_ready", "checks": checks}
+        )
+
+    return {
+        "status": "ready",
+        "checks": checks,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+# ==========================================
 # ROUTE IMPLEMENTATIONS
 # ==========================================
 

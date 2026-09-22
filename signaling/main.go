@@ -84,6 +84,8 @@ func main() {
 	certFile := os.Getenv("SSL_CERT_FILE")
 	keyFile := os.Getenv("SSL_KEY_FILE")
 
+	http.HandleFunc("/healthz", handleHealthz)
+	http.HandleFunc("/readyz", handleReadyz)
 	http.HandleFunc("/agent/register", handleAgentRegister)
 	http.HandleFunc("/client/connect", handleClientConnect)
 	http.HandleFunc("/api/devices", func(w http.ResponseWriter, r *http.Request) {
@@ -357,4 +359,30 @@ func handleDeviceTelemetry(w http.ResponseWriter, r *http.Request, apiKey string
 	defer telemetryMu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(telemetryCache)
+}
+
+func handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "healthy",
+		"service":   "signaling",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func handleReadyz(w http.ResponseWriter, r *http.Request) {
+	hub.mu.RLock()
+	agentCount := len(hub.agents)
+	clientCount := len(hub.clients)
+	hub.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":           "ready",
+		"connected_agents": agentCount,
+		"active_clients":   clientCount,
+		"timestamp":        time.Now().UTC().Format(time.RFC3339),
+	})
 }
