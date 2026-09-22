@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse, JSONResponse
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -281,6 +282,53 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ==========================================
+# PROMETHEUS METRICS INSTRUMENTATION
+# ==========================================
+PROM_REQUEST_TOTAL = Counter(
+    "http_requests_total",
+    "Total count of HTTP requests",
+    ["method", "endpoint", "status"]
+)
+PROM_REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "Histogram of HTTP request durations in seconds",
+    ["method", "endpoint"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+)
+PROM_ACTIVE_USERS = Gauge(
+    "platform_registered_users_total",
+    "Total registered users in platform"
+)
+
+@app.middleware("http")
+async def prometheus_metrics_middleware(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+    
+    path = request.url.path
+    # Group dynamic device or session id paths to avoid metric cardinality explosion
+    normalized_path = path
+    if path.startswith("/api/devices/"):
+        normalized_path = "/api/devices/{id}"
+    elif path.startswith("/api/audit-logs/"):
+        normalized_path = "/api/audit-logs/{id}"
+        
+    PROM_REQUEST_TOTAL.labels(method=request.method, endpoint=normalized_path, status=str(response.status_code)).inc()
+    PROM_REQUEST_LATENCY.labels(method=request.method, endpoint=normalized_path).observe(duration)
+    return response
+
+@app.get("/metrics")
+def prometheus_metrics(db: Session = Depends(get_db)):
+    """Expose Prometheus telemetry metrics."""
+    try:
+        PROM_ACTIVE_USERS.set(db.query(UserDB).count())
+    except Exception:
+        pass
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 # ==========================================
 # HEALTH & READINESS PROBES

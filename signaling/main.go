@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -34,6 +36,9 @@ var hub = Hub{
 var (
 	rateLimitMap = make(map[string][]time.Time)
 	rateLimitMu  sync.Mutex
+
+	startTime       = time.Now()
+	messagesRelayed int64
 )
 
 func isRateLimited(ip string, limit int, window time.Duration) bool {
@@ -86,6 +91,7 @@ func main() {
 
 	http.HandleFunc("/healthz", handleHealthz)
 	http.HandleFunc("/readyz", handleReadyz)
+	http.HandleFunc("/metrics", handleMetrics)
 	http.HandleFunc("/agent/register", handleAgentRegister)
 	http.HandleFunc("/client/connect", handleClientConnect)
 	http.HandleFunc("/api/devices", func(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +206,7 @@ func handleAgentRegister(w http.ResponseWriter, r *http.Request) {
 		hub.mu.RUnlock()
 
 		if hasClient {
+			atomic.AddInt64(&messagesRelayed, 1)
 			err = clientConn.WriteMessage(websocket.TextMessage, message)
 			if err != nil {
 				log.Printf("Error relaying message from Agent %s to Client: %v", deviceId, err)
@@ -287,6 +294,7 @@ func handleClientConnect(w http.ResponseWriter, r *http.Request) {
 		hub.mu.RUnlock()
 
 		if hasAgent {
+			atomic.AddInt64(&messagesRelayed, 1)
 			err = agentConn.WriteMessage(websocket.TextMessage, message)
 			if err != nil {
 				log.Printf("Error relaying message from Client to Agent %s: %v", deviceId, err)
@@ -385,4 +393,34 @@ func handleReadyz(w http.ResponseWriter, r *http.Request) {
 		"active_clients":   clientCount,
 		"timestamp":        time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	hub.mu.RLock()
+	agentCount := len(hub.agents)
+	clientCount := len(hub.clients)
+	hub.mu.RUnlock()
+
+	relayed := atomic.LoadInt64(&messagesRelayed)
+	uptime := time.Since(startTime).Seconds()
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	var b strings.Builder
+	b.WriteString("# HELP signaling_connected_agents Total active registered agents\n")
+	b.WriteString("# TYPE signaling_connected_agents gauge\n")
+	fmt.Fprintf(&b, "signaling_connected_agents %d\n", agentCount)
+
+	b.WriteString("# HELP signaling_connected_clients Total active operator viewer sessions\n")
+	b.WriteString("# TYPE signaling_connected_clients gauge\n")
+	fmt.Fprintf(&b, "signaling_connected_clients %d\n", clientCount)
+
+	b.WriteString("# HELP signaling_messages_relayed_total Total WebRTC messages relayed by hub\n")
+	b.WriteString("# TYPE signaling_messages_relayed_total counter\n")
+	fmt.Fprintf(&b, "signaling_messages_relayed_total %d\n", relayed)
+
+	b.WriteString("# HELP signaling_uptime_seconds Total uptime in seconds\n")
+	b.WriteString("# TYPE signaling_uptime_seconds counter\n")
+	fmt.Fprintf(&b, "signaling_uptime_seconds %.2f\n", uptime)
+
+	w.Write([]byte(b.String()))
 }
